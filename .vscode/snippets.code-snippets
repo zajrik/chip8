@@ -1,0 +1,67 @@
+{
+    // Zig snippets
+    "chip8": {
+        "scope": "zig",
+        "prefix": "lib",
+        "description": "Inserts a root library import with a relative path.",
+        "body": "const chip8 = @import(\"${RELATIVE_FILEPATH/(src\\\\chip8\\\\[^\\\\]+\\\\[^\\\\]+.zig|(?:src\\\\chip8\\\\[^\\\\]+\\\\|(?:[^\\\\]+\\\\[^\\\\]+.zig|[^\\\\]+\\\\)))/..\\\//g}.lib.zig\");"
+    },
+    "Empty struct/tuple": {
+        "scope": "zig",
+        "prefix": "..",
+        "description": "Inserts an empty struct/tuple, ready to be filled.",
+        "body": ".{$1}",
+    },
+    "Struct @This() declaration": {
+        "scope": "zig",
+        "prefix": "this",
+        "body": "const ${TM_FILENAME_BASE/(.+)/${1:/pascalcase}/}: type = @This();"
+    },
+    "Struct method": {
+        "scope": "zig",
+        "prefix": [
+            "fn",
+            "method",
+            "meth",
+        ],
+        "body": [
+            "fn ${1:name}(self: *const ${TM_FILENAME_BASE/(.+)/${1:/pascalcase}/}$2) ${3:void} {",
+            "    _ = self;",
+            "    $0",
+            "}",
+        ]
+    },
+    "Pub struct method": {
+        "scope": "zig",
+        "prefix": [
+            "pubfn",
+            "pubmethod",
+            "pubmeth",
+        ],
+        "body": [
+            "pub fn ${1:name}(self: *const ${TM_FILENAME_BASE/(.+)/${1:/pascalcase}/}$2) ${3:void} {",
+            "    _ = self;",
+            "    $0",
+            "}",
+        ]
+    },
+    "String ([]const u8)": {
+        "scope": "zig",
+        "prefix": "String",
+        "body": "[]const u8",
+    },
+    "Section separator": {
+        "scope": "zig",
+        "prefix": "separator",
+        "body": "// =================================================================================================",
+    },
+    // JSON snippets
+    "Escape JSON string": {
+        "scope": "json,jsonc,snippets",
+        "body": "${TM_SELECTED_TEXT/(?:(\\\\)|(\"))/${1:+\\\\\\\\}${2:+\\\\\"}/g}",
+    },
+    "Unescape JSON string": {
+        "scope": "json,jsonc,snippets",
+        "body": "${TM_SELECTED_TEXT/(?:(\\\\\\\\)|(\\\\\"))/${1:+\\\\}${2:+\"}/g}",
+    },
+}

@@ -55,6 +55,18 @@
         "prefix": "separator",
         "body": "// =================================================================================================",
     },
+    "Type cast": {
+        "scope": "zig",
+        "body": "@as($0, $TM_SELECTED_TEXT)",
+    },
+    "Int cast": {
+        "scope": "zig",
+        "body": "@intCast($TM_SELECTED_TEXT)",
+    },
+    "Bit cast": {
+        "scope": "zig",
+        "body": "@bitCast($TM_SELECTED_TEXT)",
+    },
     // JSON snippets
     "Escape JSON string": {
         "scope": "json,jsonc,snippets",

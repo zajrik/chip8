@@ -69,22 +69,14 @@ pub fn read(self: *Machine) u16 {
     return @as(u16, byte_1) << 8 | byte_2;
 }
 
-/// Custom formatter for printing display buffer for debugging.
-pub fn format(self: *const Machine, writer: *Writer) !void {
-    for (self.display_buffer, 0..) |bit, i| {
-        try writer.print("{}", .{bit});
-        if (i + 1 & WIDTH - 1 == 0) try writer.writeAll("\n");
-    }
-}
-
 /// Execute the given instruction.
 pub fn execute(self: *Machine, op: Instruction) void {
     switch (op.d) {
         0x0 => switch (op) {
             // 0x00E0: Clear display buffer
-            comptime Instruction.decode(0x00E0) => self.display_buffer = @splat(0b0),
+            comptime .decode(0x00E0) => self.display_buffer = @splat(0b0),
             // 0x00EE: Return from subroutine
-            comptime Instruction.decode(0x00EE) => self.pc = self.stack.pop(),
+            comptime .decode(0x00EE) => self.pc = self.stack.pop(),
 
             else => unreachable,
         },
@@ -98,9 +90,14 @@ pub fn execute(self: *Machine, op: Instruction) void {
             self.pc = op.nnn();
         },
 
-        0x3 => {},
-        0x4 => {},
-        0x5 => {},
+        // 0x3XNN: Skip next instruction if VX equals NN
+        0x3 => self.pc += if (self.v[op.x] == op.nn()) 2 else 0,
+
+        // 0x4XNN: Skip next instruction if VX does not equal NN
+        0x4 => self.pc += if (self.v[op.x] != op.nn()) 2 else 0,
+
+        // 0x5XY0: Skip next instruction if VX == VY
+        0x5 => self.pc += if (self.v[op.x] == self.v[op.y]) 2 else 0,
 
         // 0x6XNN: Set register VX to NN
         0x6 => self.v[op.x] = op.nn(),
@@ -108,8 +105,29 @@ pub fn execute(self: *Machine, op: Instruction) void {
         // 0x7XNN: Add NN to register VX. Does not overflow.
         0x7 => self.v[op.x] +|= op.nn(),
 
-        0x8 => {},
-        0x9 => {},
+        // 0x8XYN: Logical/arithmetic instructions
+        0x8 => switch (op.n) {
+            // 0x8XY0: Set VX to value of VY
+            0x0 => self.v[op.x] = self.v[op.y],
+
+            // 0x8XY1: Set VX to VX | VY
+            0x1 => self.v[op.x] |= self.v[op.y],
+
+            // 0x8XY2: Set VX to VX & VY
+            0x2 => self.v[op.x] &= self.v[op.y],
+
+            // 0x8XY3: Set VX to VX ^ VY
+            0x3 => self.v[op.x] ^= self.v[op.y],
+
+            // 0x8XY4: Set VX to VX + VY
+            // TODO: Set the carry flag on overflow, account for X == 0xF
+            0x4 => self.v[op.x] +%= self.v[op.y],
+
+            else => unreachable,
+        },
+
+        // 0x9XY0: Skip next instruction if VX != VY
+        0x9 => self.pc += if (self.v[op.x] != self.v[op.y]) 2 else 0,
 
         // 0xANNN: Set index register to NNN
         0xA => self.ir = op.nnn(),
@@ -127,16 +145,16 @@ pub fn execute(self: *Machine, op: Instruction) void {
             std.debug.print("VX = {}, VY = {}\n", .{ vx, vy });
 
             // Slice sprite rows from memory
-            const sprite_rows: []u8 = self.ram[self.ir..(self.ir + op.n)];
+            const sprite: []u8 = self.ram[self.ir..(self.ir + op.n)];
 
             // Write sprite row bytes to display buffer. For each bit of a row's
             // byte value, toggle the corresponding pixel in the display buffer.
             //
             // If a pixel was turned off, set the flag register (VF) to 1, otherwise 0
 
-            for (sprite_rows, 0..) |row, n| for (0..8) |i| {
+            for (sprite, 0..) |row, n| for (0..8) |i| {
                 const bit_index: u8 = @intCast(i);
-                const bit: u1 = @truncate(row >> @intCast(@as(u8, 7 - bit_index)));
+                const bit: u1 = @truncate(row >> @intCast(7 - bit_index));
 
                 // The offset of the display buffer pixel we're writing
                 const offset: usize = vx + i + ((vy + n) * WIDTH);
@@ -153,5 +171,13 @@ pub fn execute(self: *Machine, op: Instruction) void {
 
         0xE => {},
         0xF => {},
+    }
+}
+
+/// Custom formatter for printing display buffer for debugging.
+pub fn format(self: *const Machine, writer: *Writer) !void {
+    for (self.display_buffer, 0..) |bit, i| {
+        try writer.print("{}", .{bit});
+        if (i + 1 & WIDTH - 1 == 0) try writer.writeAll("\n");
     }
 }

@@ -5,6 +5,7 @@ const std = @import("std");
 const Instruction = @import("instruction.zig").Instruction;
 const Stack = @import("stack.zig");
 
+const Random = std.Random;
 const Writer = std.Io.Writer;
 
 const assert = std.debug.assert;
@@ -43,8 +44,12 @@ sound: u8 = 0x00,
 
 display_buffer: [WIDTH * HEIGHT]u1 = @splat(0b0),
 
-pub fn init(program: []const u8) Machine {
-    var self: Machine = .{};
+/// `std.Random` instance for generating random numbers.
+rand: Random,
+
+/// Initialize a `Machine` instance on the stack.
+pub fn init(program: []const u8, prng: *Random.DefaultPrng) Machine {
+    var self: Machine = .{ .rand = prng.random() };
 
     // Copy font into memory at the conventional address
     @memcpy(self.ram[0x0050..0x00A0], &font);
@@ -71,7 +76,19 @@ pub fn read(self: *Machine) u16 {
 
 /// Execute the given instruction.
 pub fn execute(self: *Machine, op: Instruction) void {
-    switch (op.d) {
+    // Unpack instruction
+    const d: u4 = op.d;
+    const x: u4 = op.x;
+    const y: u4 = op.y;
+    const n: u4 = op.n;
+    const nn: u8 = op.nn();
+    const nnn: u12 = op.nnn();
+
+    // Dispatch instruction.
+    //
+    // Instructions are grouped/ordered by functionality where applicable at the
+    // cost of not necessarily being ordered numerically
+    switch (d) {
         0x0 => switch (op) {
             // 0x00E0: Clear display buffer
             comptime .decode(0x00E0) => self.display_buffer = @splat(0b0),
@@ -82,102 +99,182 @@ pub fn execute(self: *Machine, op: Instruction) void {
         },
 
         // 0x1NNN: Jump to NNN
-        0x1 => self.pc = op.nnn(),
+        0x1 => self.pc = nnn,
+
+        // 0xBNNN: Jump to NNN + V0 offset
+        // CHIP-48/SUPER-CHIP changed this behavior to PC = XNN + VX, may want config
+        // option to support that changed behavior
+        0xB => self.pc = nnn + self.v[0],
 
         // 0x2NNN: Call subroutine at NNN
         0x2 => {
             self.stack.push(self.pc);
-            self.pc = op.nnn();
+            self.pc = nnn;
         },
 
-        // 0x3XNN: Skip next instruction if VX equals NN
-        0x3 => self.pc += if (self.v[op.x] == op.nn()) 2 else 0,
+        // Skip instructions:
+        // - 0x3XNN: Skip next instruction if VX == NN
+        // - 0x4XNN: Skip next instruction if VX != NN
+        // - 0x5XY0: Skip next instruction if VX == VY
+        // - 0x9XY0: Skip next instruction if VX != VY
+        0x3, 0x4, 0x5, 0x9 => {
+            const vx: u8 = self.v[x];
+            const vy: u8 = self.v[y];
 
-        // 0x4XNN: Skip next instruction if VX does not equal NN
-        0x4 => self.pc += if (self.v[op.x] != op.nn()) 2 else 0,
+            if (d == 0x5 or d == 0x9) assert(n == 0);
 
-        // 0x5XY0: Skip next instruction if VX == VY
-        0x5 => self.pc += if (self.v[op.x] == self.v[op.y]) 2 else 0,
+            const res: bool = switch (d) {
+                0x3 => vx == nn,
+                0x4 => vx != nn,
+                0x5 => vx == vy,
+                0x9 => vx != vy,
+                else => unreachable,
+            };
+
+            self.pc += @as(u16, @intFromBool(res)) * 2;
+        },
+
+        // Skip instructions:
+        // 0xEX9E: Skip next instruction if key in VX is down
+        // 0xEXA1: Skip next instruction if key in VX is up
+        0xE => {},
 
         // 0x6XNN: Set register VX to NN
-        0x6 => self.v[op.x] = op.nn(),
+        0x6 => self.v[x] = nn,
 
         // 0x7XNN: Add NN to register VX. Does not overflow.
-        0x7 => self.v[op.x] +|= op.nn(),
+        0x7 => self.v[x] +|= nn,
 
         // 0x8XYN: Logical/arithmetic instructions
-        0x8 => switch (op.n) {
+        0x8 => switch (n) {
             // 0x8XY0: Set VX to value of VY
-            0x0 => self.v[op.x] = self.v[op.y],
+            0x0 => self.v[x] = self.v[y],
 
             // 0x8XY1: Set VX to VX | VY
-            0x1 => self.v[op.x] |= self.v[op.y],
+            0x1 => self.v[x] |= self.v[y],
 
             // 0x8XY2: Set VX to VX & VY
-            0x2 => self.v[op.x] &= self.v[op.y],
+            0x2 => self.v[x] &= self.v[y],
 
             // 0x8XY3: Set VX to VX ^ VY
-            0x3 => self.v[op.x] ^= self.v[op.y],
+            0x3 => self.v[x] ^= self.v[y],
 
             // 0x8XY4: Set VX to VX + VY
-            // TODO: Set the carry flag on overflow, account for X == 0xF
-            0x4 => self.v[op.x] +%= self.v[op.y],
+            0x4 => {
+                const vx: u8 = self.v[x];
+                const vy: u8 = self.v[y];
+
+                self.v[x] = vx +% vy;
+                self.v[0xF] = @intFromBool(vx + vy > 0xFF);
+            },
+
+            // 0x8XY5, 0x8XY7: Set VX to VX - VY (N == 5) or VY - VX (N == 7)
+            0x5, 0x7 => {
+                const vx: u8 = self.v[x];
+                const vy: u8 = self.v[y];
+
+                const min: u8, const sub: u8 = switch (n) {
+                    0x5 => .{ vx, vy },
+                    0x7 => .{ vy, vx },
+                    else => unreachable,
+                };
+
+                self.v[x] = min -% sub;
+                self.v[0xF] = @intFromBool(min >= sub);
+            },
+
+            // 0x8XY6, 0x8XYE: Set VX to VX >> 1 (N == 6) or VX << 1 (N == E)
+            // These instructions were changed for CHIP-48/SUPER-CHIP to the above behavior.
+            // Old behavior copied VY into VX and then shifted VX. May want to allow config
+            // to support the old behavior
+            0x6, 0xE => {
+                const vx: u8 = self.v[x];
+
+                const res: u9, const ovf: u1 = switch (n) {
+                    0x6 => .{ vx >> 1, @intFromBool(vx & 0x01 != 0) },
+                    0xE => .{ vx << 1, @intFromBool(vx & 0x80 != 0) },
+                    else => unreachable,
+                };
+
+                self.v[x] = @truncate(res);
+                self.v[0xF] = ovf;
+            },
 
             else => unreachable,
         },
 
-        // 0x9XY0: Skip next instruction if VX != VY
-        0x9 => self.pc += if (self.v[op.x] != self.v[op.y]) 2 else 0,
-
         // 0xANNN: Set index register to NNN
-        0xA => self.ir = op.nnn(),
+        0xA => self.ir = nnn,
 
-        0xB => {},
-        0xC => {},
+        // 0xCXNN: Set VX to rand & NN
+        0xC => self.v[x] = self.rand.int(u8) & nn,
 
         // 0xDXYN: Draw sprite from memory location pointed to by the index register
         0xD => {
-            const vx: u8 = self.v[op.x] & WIDTH - 1;
-            const vy: u8 = self.v[op.y] & HEIGHT - 1;
+            const vx: u8 = self.v[x] & WIDTH - 1;
+            const vy: u8 = self.v[y] & HEIGHT - 1;
             self.v[0xF] = 0x00;
 
             std.debug.print("Display op: {f}\n", .{op});
             std.debug.print("VX = {}, VY = {}\n", .{ vx, vy });
 
-            // Slice sprite rows from memory
-            const sprite: []u8 = self.ram[self.ir..(self.ir + op.n)];
+            // Slice sprite bytes from memory
+            const sprite: []u8 = self.ram[self.ir..(self.ir + n)];
 
-            // Write sprite row bytes to display buffer. For each bit of a row's
-            // byte value, toggle the corresponding pixel in the display buffer.
+            // Write sprite bytes to display buffer. For each bit of a row's byte
+            // value, toggle the corresponding pixel in the display buffer.
             //
             // If a pixel was turned off, set the flag register (VF) to 1, otherwise 0
 
-            for (sprite, 0..) |row, n| for (0..8) |i| {
-                const bit_index: u8 = @intCast(i);
-                const bit: u1 = @truncate(row >> @intCast(7 - bit_index));
+            for (sprite, 0..) |byte, bn| for (0..8) |i| {
+                const bit: u1 = @truncate(byte >> @intCast(7 - i));
 
                 // The offset of the display buffer pixel we're writing
-                const offset: usize = vx + i + ((vy + n) * WIDTH);
+                const offset: usize = vx + i + ((vy + bn) * WIDTH);
 
-                if (bit != 1 or offset > WIDTH * HEIGHT or vx + i >= WIDTH) continue;
+                if (bit != 1 or offset >= WIDTH * HEIGHT or vx + i >= WIDTH) continue;
 
-                const current_bit: u1 = self.display_buffer[offset];
-                const new_bit: u1 = current_bit ^ bit;
+                const old_bit: u1 = self.display_buffer[offset];
+                const new_bit: u1 = old_bit ^ bit;
                 self.display_buffer[offset] = new_bit;
 
-                if (current_bit == 1 and new_bit == 0) self.v[0xF] = 0x01;
+                if (old_bit == 1 and new_bit == 0) self.v[0xF] = 0x01;
             };
         },
 
-        0xE => {},
-        0xF => {},
+        // FX instructions. These don't really line up with other instructions 💀
+        0xF => {
+            const vx: u8 = self.v[x];
+
+            switch (nn) {
+                0x07 => self.v[x] = self.delay,
+                0x15 => self.delay = vx,
+                0x18 => self.sound = vx,
+
+                0x0A => {},
+
+                // 0xFX1E: Set I = VX, set VF = 1 on overflow
+                0x1E => {
+                    const i: u16 = self.ir;
+                    self.ir = (i + vx) & 0xFFF;
+                    self.v[0xF] = @intFromBool(i + vx > 0xFFF);
+                },
+
+                0x29 => {},
+                0x33 => {},
+                0x55 => {},
+                0x65 => {},
+
+                else => unreachable,
+            }
+        },
     }
 }
 
 /// Custom formatter for printing display buffer for debugging.
 pub fn format(self: *const Machine, writer: *Writer) !void {
     for (self.display_buffer, 0..) |bit, i| {
-        try writer.print("{}", .{bit});
-        if (i + 1 & WIDTH - 1 == 0) try writer.writeAll("\n");
+        try writer.print("{s}", .{if (bit == 1) "#" else " "});
+        try writer.writeAll(if (i + 1 & WIDTH - 1 == 0) "\n" else "|");
     }
 }

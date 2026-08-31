@@ -1,4 +1,4 @@
-//! Virtual machine for interpreting Chip-8 instructions.
+//! Virtual machine for interpreting CHIP-8 instructions.
 
 const std = @import("std");
 
@@ -36,7 +36,7 @@ v: [16]u8 = @splat(0x00),
 /// Program counter, pointing to the next instruction to read.
 pc: u16 = 0x0200,
 
-/// Index register
+/// Index register. CHIP-8 only uses 12 bits for addresses
 ir: u16 = 0x0000,
 
 delay: u8 = 0x00,
@@ -135,8 +135,8 @@ pub fn execute(self: *Machine, op: Instruction) void {
         },
 
         // Skip instructions:
-        // 0xEX9E: Skip next instruction if key in VX is down
-        // 0xEXA1: Skip next instruction if key in VX is up
+        // TODO: 0xEX9E: Skip next instruction if key in VX is down
+        // TODO: 0xEXA1: Skip next instruction if key in VX is up
         0xE => {},
 
         // 0x6XNN: Set register VX to NN
@@ -247,10 +247,16 @@ pub fn execute(self: *Machine, op: Instruction) void {
             const vx: u8 = self.v[x];
 
             switch (nn) {
+                // 0xFX07: Set VX to the value of the delay timer
                 0x07 => self.v[x] = self.delay,
+
+                // 0xFX15: Set delay timer to the value of VX
                 0x15 => self.delay = vx,
+
+                // 0xFX18: Set the sound timer to the value of VX
                 0x18 => self.sound = vx,
 
+                // TODO: 0xFX0A: Block execution until key is pressed, set VX to key
                 0x0A => {},
 
                 // 0xFX1E: Set I = VX, set VF = 1 on overflow
@@ -260,10 +266,22 @@ pub fn execute(self: *Machine, op: Instruction) void {
                     self.v[0xF] = @intFromBool(i + vx > 0xFFF);
                 },
 
-                0x29 => {},
+                // 0xFX29: Set I to the index of the font sprite for VX
+                // Only takes the second nibble of the byte in VX
+                0x29 => self.ir = 0x050 + (vx & 0x0F) * 5,
+
+                // TODO: 0xFX33: Binary-coded decimal conversion
                 0x33 => {},
-                0x55 => {},
-                0x65 => {},
+
+                // 0xFX55: Store registers V0 through VX at address I
+                0x55 => for (0..(vx & 0xF)) |i| {
+                    self.ram[self.ir + i] = self.v[i];
+                },
+
+                // 0xFX65: Load registers V0 through VX from address I
+                0x65 => for (0..(vx & 0xF)) |i| {
+                    self.v[i] = self.ram[self.ir + i];
+                },
 
                 else => unreachable,
             }

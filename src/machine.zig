@@ -270,16 +270,20 @@ pub fn execute(self: *Machine, op: Instruction) void {
                 // Only takes the second nibble of the byte in VX
                 0x29 => self.ir = 0x050 + (vx & 0x0F) * 5,
 
-                // TODO: 0xFX33: Binary-coded decimal conversion
-                0x33 => {},
+                // 0xFX33: Store separate decimal digits of VX in ram at $I..$I+2
+                0x33 => {
+                    self.ram[self.ir] = vx / 100;
+                    self.ram[self.ir + 1] = vx % 100 / 10;
+                    self.ram[self.ir + 2] = vx % 100 % 10;
+                },
 
-                // 0xFX55: Store registers V0 through VX at address I
-                0x55 => for (0..(vx & 0xF)) |i| {
+                // 0xFX55: Store registers V0..VX at $I..$I+X
+                0x55 => for (0..(vx + 1) & 0xF) |i| {
                     self.ram[self.ir + i] = self.v[i];
                 },
 
-                // 0xFX65: Load registers V0 through VX from address I
-                0x65 => for (0..(vx & 0xF)) |i| {
+                // 0xFX65: Load registers V0..VX from $I..$I+X
+                0x65 => for (0..(vx + 1) & 0xF) |i| {
                     self.v[i] = self.ram[self.ir + i];
                 },
 

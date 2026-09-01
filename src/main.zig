@@ -13,14 +13,16 @@ pub fn main(init: std.process.Init) !void {
     const program = [_]u8{
         0x60, 0x00, // Set V0 = 0x00
         0xF0, 0x29, // Set I = font sprite for V0
+
+        // Set coordinates and draw sprite
         0x61, 0x02, // Set V1 = 0x02
         0x62, 0x01, // Set V2 = 0x01
-        0xD1, 0x25, // Draw VX = V1, VY = V2, N = 5
+        0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
 
         0x70, 0x01, // Set V0 += 0x01
         0xF0, 0x29, // Set I = font sprite for V0
         0x71, 0x05, // Set V1 += 0x05
-        0xD1, 0x25, // Draw VX = V1, VY = V2, N = 5
+        0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
 
         0x70, 0x01,
         0xF0, 0x29,
@@ -96,14 +98,44 @@ pub fn main(init: std.process.Init) !void {
         0x71, 0x05,
         0xD1, 0x25, //
 
-        0xC3, 0xFF, // Set V3 = rand & 0xFF
+        // Move to next line
+        0x61, 0x02, // Set V1 = 0x02
+        0x72, 0x06, // Set V2 += 0x06
+
+        // Test FE33, write decimal digits to display
+        0xAF, 0x00, // Set I = 0xF00
+        0x6E, 0xAE, // Set VE to value to display
+        0xFE, 0x33, // Write decimal digits of VE to $F00
+
+        // Load decimal digits into registers after sprite coords
+        0xAE, 0xFD, // Set I = 0xEFD
+        0x6D, 0x02, // Set VD = 0x02
+        0xFD, 0x55, // Write V0..V2 to $EFD..$EFF
+        0x6D, 0x05, // Set VD = 0x05
+        0xFD, 0x65, // Load $EFD..$F02 into V0..V5
+
+        // Draw sprite for first digit
+        0x80, 0x30, // Set V0 = V3
+        0xF0, 0x29, // Set I = font sprite for V0
+        0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
+
+        // Draw sprite for second digit
+        0x80, 0x40, // Set V0 = V4
+        0xF0, 0x29, // Set I = font sprite for V0
+        0x71, 0x05, // Set V1 += 0x05
+        0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
+
+        // Draw sprite for third digit
+        0x80, 0x50, // Set V0 = V5
+        0xF0, 0x29, // Set I = font sprite for V0
+        0x71, 0x05, // Set V1 += 0x05
+        0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
     };
 
     var machine: Machine = .init(&program, &prng);
     for (0..program.len / 2) |_| machine.execute(.decode(machine.read()));
 
     std.debug.print("{f}\n", .{&machine});
-    std.debug.print("Rand: {}", .{machine.v[3]});
 }
 
 /// Initialize an `std.Random.DefaultPrng` instance seeded with the current time.

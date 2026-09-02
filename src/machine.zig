@@ -278,14 +278,16 @@ pub fn execute(self: *Machine, op: Instruction) void {
                 },
 
                 // 0xFX55: Store registers V0..VX at $I..$I+X
-                0x55 => for (0..(vx + 1) & 0xF) |i| {
-                    self.ram[self.ir + i] = self.v[i];
-                },
+                0x55 => @memcpy(
+                    self.ram[self.ir .. self.ir + (vx & 0x0F) + 1],
+                    self.v[0 .. (vx & 0x0F) + 1],
+                ),
 
                 // 0xFX65: Load registers V0..VX from $I..$I+X
-                0x65 => for (0..(vx + 1) & 0xF) |i| {
-                    self.v[i] = self.ram[self.ir + i];
-                },
+                0x65 => @memcpy(
+                    self.v[0 .. (vx & 0x0F) + 1],
+                    self.ram[self.ir .. self.ir + (vx & 0x0F) + 1],
+                ),
 
                 else => unreachable,
             }

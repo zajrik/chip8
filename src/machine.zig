@@ -55,7 +55,7 @@ pub fn init(program: []const u8, prng: *Random.DefaultPrng) Machine {
     @memcpy(self.ram[0x0050..0x00A0], &font);
 
     // Copy program into memory at the conventional address
-    @memcpy(self.ram[0x0200..(0x0200 + program.len)], program);
+    @memcpy(self.ram[0x0200 .. 0x0200 + program.len], program);
 
     return self;
 }
@@ -89,11 +89,11 @@ pub fn execute(self: *Machine, op: Instruction) void {
     // Instructions are grouped/ordered by functionality where applicable at the
     // cost of not necessarily being ordered numerically
     switch (d) {
-        0x0 => switch (op) {
+        0x0 => switch (nnn) {
             // 0x00E0: Clear display buffer
-            comptime .decode(0x00E0) => self.display_buffer = @splat(0b0),
+            0x0E0 => self.display_buffer = @splat(0b0),
             // 0x00EE: Return from subroutine
-            comptime .decode(0x00EE) => self.pc = self.stack.pop(),
+            0x0EE => self.pc = self.stack.pop(),
 
             else => unreachable,
         },
@@ -215,11 +215,8 @@ pub fn execute(self: *Machine, op: Instruction) void {
             const vy: u8 = self.v[y] & HEIGHT - 1;
             self.v[0xF] = 0x00;
 
-            std.debug.print("Display op: {f}\n", .{op});
-            std.debug.print("VX = {}, VY = {}\n", .{ vx, vy });
-
             // Slice sprite bytes from memory
-            const sprite: []u8 = self.ram[self.ir..(self.ir + n)];
+            const sprite: []u8 = self.ram[self.ir .. self.ir + n];
 
             // Write sprite bytes to display buffer. For each bit of a row's byte
             // value, toggle the corresponding pixel in the display buffer.
@@ -230,7 +227,7 @@ pub fn execute(self: *Machine, op: Instruction) void {
                 const bit: u1 = @truncate(byte >> @intCast(7 - i));
 
                 // The offset of the display buffer pixel we're writing
-                const offset: usize = vx + i + ((vy + bn) * WIDTH);
+                const offset: usize = vx + i + (vy + bn) * WIDTH;
 
                 if (bit != 1 or offset >= WIDTH * HEIGHT or vx + i >= WIDTH) continue;
 

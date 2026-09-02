@@ -142,8 +142,8 @@ pub fn execute(self: *Machine, op: Instruction) void {
         // 0x6XNN: Set register VX to NN
         0x6 => self.v[x] = nn,
 
-        // 0x7XNN: Add NN to register VX. Does not overflow.
-        0x7 => self.v[x] +|= nn,
+        // 0x7XNN: Add NN to register VX. Overflows but does not set carry flag.
+        0x7 => self.v[x] +%= nn,
 
         // 0x8XYN: Logical/arithmetic instructions
         0x8 => switch (n) {
@@ -165,7 +165,7 @@ pub fn execute(self: *Machine, op: Instruction) void {
                 const vy: u8 = self.v[y];
 
                 self.v[x] = vx +% vy;
-                self.v[0xF] = @intFromBool(vx + vy > 0xFF);
+                self.v[0xF] = @intFromBool(@as(u16, vx) + vy > 0xFF);
             },
 
             // 0x8XY5, 0x8XY7: Set VX to VX - VY (N == 5) or VY - VX (N == 7)

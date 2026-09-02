@@ -60,8 +60,14 @@ pub fn init(program: []const u8, prng: *Random.DefaultPrng) Machine {
     return self;
 }
 
-/// Decrement counters.
+/// Fetch/decode/execute next instruction.
 pub fn tick(self: *Machine) void {
+    const op: u16 = self.read();
+    self.execute(.decode(op));
+}
+
+/// Decrement timers.
+pub fn tickTimers(self: *Machine) void {
     self.delay -|= 1;
     self.sound -|= 1;
 }
@@ -254,7 +260,9 @@ pub fn execute(self: *Machine, op: Instruction) void {
                 0x18 => self.sound = vx,
 
                 // TODO: 0xFX0A: Block execution until key is pressed, set VX to key
-                0x0A => {},
+                0x0A => {
+                    self.pc -= 2;
+                },
 
                 // 0xFX1E: Set I = VX, set VF = 1 on overflow
                 0x1E => {

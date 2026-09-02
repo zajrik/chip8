@@ -1,144 +1,159 @@
 const std = @import("std");
+const sdl3 = @import("sdl3");
 
 const Machine = @import("machine.zig");
 
+const Allocator = std.mem.Allocator;
 const Io = std.Io;
+const Dir = std.Io.Dir;
 const Prng = std.Random.DefaultPrng;
+
+const AppResult = sdl3.AppResult;
+const Color = sdl3.pixels.Color;
+const Event = sdl3.events.Event;
+const Init = sdl3.Init;
+const InitFlags = sdl3.InitFlags;
+const FramerateCapper = sdl3.extras.FramerateCapper;
+const Renderer = sdl3.render.Renderer;
+const Window = sdl3.video.Window;
 
 const clock = Io.Clock.real;
 
-pub fn main(init: std.process.Init) !void {
-    var prng: Prng = initPrng(init.io);
+comptime {
+    _ = sdl3.main_callbacks;
+}
+pub const _start = void;
+pub const WinMainCRTStartup = void;
 
-    const program = [_]u8{
-        0x60, 0x00, // Set V0 = 0x00
-        0xF0, 0x29, // Set I = font sprite for V0
+const flags: InitFlags = .{ .video = true, .events = true };
+const bg_color: Color = .{ .r = 0, .g = 0, .b = 0 };
+const fg_color: Color = .{ .r = 255, .g = 255, .b = 255 };
 
-        // Set coordinates and draw sprite
-        0x61, 0x02, // Set V1 = 0x02
-        0x62, 0x01, // Set V2 = 0x01
-        0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
+const machine_ticks_per_second: f32 = 1.0 / 600.0;
+const timer_ticks_per_second: f32 = 1.0 / 60.0;
 
-        0x70, 0x01, // Set V0 += 0x01
-        0xF0, 0x29, // Set I = font sprite for V0
-        0x71, 0x05, // Set V1 += 0x05
-        0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
+const AppState = struct {
+    fps: FramerateCapper(f32),
+    window: Window,
+    renderer: Renderer,
 
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
+    machine: Machine,
 
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
+    state_t: f32 = 0.0,
+    timer_t: f32 = 0.0,
+};
 
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
+pub fn init(sdl_init: Init) !struct { AppState, AppResult } {
+    try sdl3.init(flags);
+    errdefer sdl3.quit(flags);
 
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
+    const window: Window, const renderer: Renderer = try Renderer.initWithWindow(
+        "chip-8",
+        640,
+        320,
+        .{ .resizable = true },
+    );
 
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
+    errdefer renderer.deinit();
+    errdefer window.deinit();
 
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
+    try renderer.setLogicalPresentation(64, 32, .letter_box);
 
-        // Move to next line
-        0x61, 0x02, // Set V1 = 0x02
-        0x72, 0x06, // Set V2 += 0x06
+    // const program = @import("test_program.zig").program;
+    const program: []u8 = try readFile(
+        sdl_init.arena.allocator(),
+        sdl_init.io,
+        "rom/test_opcode.ch8",
+    );
+    var prng: Prng = initPrng(sdl_init.io);
 
-        0x70, 0x01,
-        0xF0, 0x29,
-        // 0x71, 0x05,
-        0xD1, 0x25, //
-
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
-
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
-
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
-
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
-
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
-
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
-
-        0x70, 0x01,
-        0xF0, 0x29,
-        0x71, 0x05,
-        0xD1, 0x25, //
-
-        // Move to next line
-        0x61, 0x02, // Set V1 = 0x02
-        0x72, 0x06, // Set V2 += 0x06
-
-        // Test FE33, write decimal digits to display
-        0xAF, 0x00, // Set I = 0xF00
-        0x6E, 0xAE, // Set VE to value to display
-        0xFE, 0x33, // Write decimal digits of VE to $F00
-
-        // Load decimal digits into registers after sprite coords
-        0xAE, 0xFD, // Set I = 0xEFD
-        0x6D, 0x02, // Set VD = 0x02
-        0xFD, 0x55, // Write V0..V2 to $EFD..$EFF
-        0x6D, 0x05, // Set VD = 0x05
-        0xFD, 0x65, // Load $EFD..$F02 into V0..V5
-
-        // Draw sprite for first digit
-        0x80, 0x30, // Set V0 = V3
-        0xF0, 0x29, // Set I = font sprite for V0
-        0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
-
-        // Draw sprite for second digit
-        0x80, 0x40, // Set V0 = V4
-        0xF0, 0x29, // Set I = font sprite for V0
-        0x71, 0x05, // Set V1 += 0x05
-        0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
-
-        // Draw sprite for third digit
-        0x80, 0x50, // Set V0 = V5
-        0xF0, 0x29, // Set I = font sprite for V0
-        0x71, 0x05, // Set V1 += 0x05
-        0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
+    return .{
+        .{
+            .fps = .{ .mode = .unlimited },
+            .window = window,
+            .renderer = renderer,
+            .machine = .init(program[0..], &prng),
+        },
+        .run,
     };
+}
 
-    var machine: Machine = .init(&program, &prng);
-    for (0..program.len / 2) |_| machine.execute(.decode(machine.read()));
+pub fn iterate(state: *AppState) !AppResult {
+    const dt: f32 = state.fps.delay();
 
-    std.debug.print("{f}\n", .{&machine});
+    state.state_t += dt;
+    state.timer_t += dt;
+
+    // Tick machine at configured rate
+    if (state.state_t >= machine_ticks_per_second) {
+        while (state.state_t >= machine_ticks_per_second) {
+            state.state_t -= machine_ticks_per_second;
+            state.machine.tick();
+        }
+    }
+
+    // Tick timers at configured rate
+    if (state.timer_t >= timer_ticks_per_second) {
+        while (state.timer_t >= timer_ticks_per_second) {
+            state.timer_t -= timer_ticks_per_second;
+            state.machine.tickTimers();
+        }
+    }
+
+    // Clear display
+    try state.renderer.setDrawColor(bg_color);
+    try state.renderer.clear();
+
+    // Render display buffer
+    try state.renderer.setDrawColor(fg_color);
+    for (state.machine.display_buffer, 0..) |bit, i| {
+        if (bit == 1) try state.renderer.renderPoint(.{
+            .x = @floatFromInt(i & 63),
+            .y = @floatFromInt(i / 64),
+        });
+    }
+    try state.renderer.present();
+
+    return .run;
+}
+
+pub fn event(state: *AppState, ev: Event) !AppResult {
+    _ = state;
+
+    return switch (ev) {
+        .quit => .success,
+        .terminating => .success,
+        else => .run,
+    };
+}
+
+pub fn quit(state: ?*AppState, result: AppResult) void {
+    _ = result;
+
+    if (state) |it| {
+        it.window.deinit();
+        it.renderer.deinit();
+    }
+
+    sdl3.quit(flags);
+    sdl3.shutdown();
 }
 
 /// Initialize an `std.Random.DefaultPrng` instance seeded with the current time.
 fn initPrng(io: Io) Prng {
     return .init(@bitCast(clock.now(io).toMicroseconds()));
+}
+
+/// Read the contents of the file at the given `path` using the given `Io` implementation.
+///
+/// Returns a slice containing the characters in the file. The caller owns this
+/// slice and is responsible for freeing it.
+pub fn readFile(alloc: Allocator, io: Io, path: []const u8) ![]u8 {
+    return try Dir.readFileAlloc(
+        Dir.cwd(),
+        io,
+        path,
+        alloc,
+        .unlimited,
+    );
 }

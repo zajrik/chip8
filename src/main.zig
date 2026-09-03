@@ -1,19 +1,20 @@
 const std = @import("std");
-const sdl3 = @import("sdl3");
-
-const Machine = @import("machine.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const Dir = std.Io.Dir;
 const Prng = std.Random.DefaultPrng;
 
+const AppState = @import("app_state.zig");
+const Machine = @import("machine.zig");
+
+const sdl3 = @import("sdl3");
+
 const AppResult = sdl3.AppResult;
 const Color = sdl3.pixels.Color;
 const Event = sdl3.events.Event;
 const Init = sdl3.Init;
 const InitFlags = sdl3.InitFlags;
-const FramerateCapper = sdl3.extras.FramerateCapper;
 const Renderer = sdl3.render.Renderer;
 const Window = sdl3.video.Window;
 
@@ -32,16 +33,7 @@ const fg_color: Color = .{ .r = 255, .g = 255, .b = 255 };
 const machine_ticks_per_second: f32 = 1.0 / 600.0;
 const timer_ticks_per_second: f32 = 1.0 / 60.0;
 
-const AppState = struct {
-    fps: FramerateCapper(f32),
-    window: Window,
-    renderer: Renderer,
-
-    machine: Machine,
-
-    state_t: f32 = 0.0,
-    timer_t: f32 = 0.0,
-};
+// =================================================================================================
 
 pub fn init(sdl_init: Init) !struct { AppState, AppResult } {
     try sdl3.init(flags);
@@ -59,17 +51,17 @@ pub fn init(sdl_init: Init) !struct { AppState, AppResult } {
 
     try renderer.setLogicalPresentation(64, 32, .letter_box);
 
-    // const program = @import("test_program.zig").program;
+    // const program = @import("data/test_program.zig").program;
     const program: []u8 = try readFile(
         sdl_init.arena.allocator(),
         sdl_init.io,
         "rom/test_opcode.ch8",
     );
+
     var prng: Prng = initPrng(sdl_init.io);
 
     return .{
         .{
-            .fps = .{ .mode = .unlimited },
             .window = window,
             .renderer = renderer,
             .machine = .init(program[0..], &prng),
@@ -85,19 +77,15 @@ pub fn iterate(state: *AppState) !AppResult {
     state.timer_t += dt;
 
     // Tick machine at configured rate
-    if (state.state_t >= machine_ticks_per_second) {
-        while (state.state_t >= machine_ticks_per_second) {
-            state.state_t -= machine_ticks_per_second;
-            state.machine.tick();
-        }
+    while (state.state_t >= machine_ticks_per_second) {
+        state.state_t -= machine_ticks_per_second;
+        state.machine.tick(state.keys);
     }
 
     // Tick timers at configured rate
-    if (state.timer_t >= timer_ticks_per_second) {
-        while (state.timer_t >= timer_ticks_per_second) {
-            state.timer_t -= timer_ticks_per_second;
-            state.machine.tickTimers();
-        }
+    while (state.timer_t >= timer_ticks_per_second) {
+        state.timer_t -= timer_ticks_per_second;
+        state.machine.tickTimers();
     }
 
     // Clear display
@@ -118,11 +106,20 @@ pub fn iterate(state: *AppState) !AppResult {
 }
 
 pub fn event(state: *AppState, ev: Event) !AppResult {
-    _ = state;
-
     return switch (ev) {
         .quit => .success,
         .terminating => .success,
+
+        .key_down => |it| {
+            if (it.scancode) |s| state.keys.add(s);
+            return .run;
+        },
+
+        .key_up => |it| {
+            if (it.scancode) |s| state.keys.remove(s);
+            return .run;
+        },
+
         else => .run,
     };
 }
@@ -138,6 +135,8 @@ pub fn quit(state: ?*AppState, result: AppResult) void {
     sdl3.quit(flags);
     sdl3.shutdown();
 }
+
+// =================================================================================================
 
 /// Initialize an `std.Random.DefaultPrng` instance seeded with the current time.
 fn initPrng(io: Io) Prng {

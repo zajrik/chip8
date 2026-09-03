@@ -2,15 +2,16 @@
 
 const std = @import("std");
 
-const Instruction = @import("instruction.zig").Instruction;
-const Stack = @import("stack.zig");
-
 const Random = std.Random;
 const Writer = std.Io.Writer;
 
+const Instruction = @import("instruction.zig").Instruction;
+const Keys = @import("keys.zig");
+const Stack = @import("stack.zig");
+
 const assert = std.debug.assert;
 
-const font: [80]u8 = @import("font.zig").font;
+const font: [80]u8 = @import("data/font.zig").font;
 
 // Dimensions must be powers of 2 to allow using `n & WIDTH - 1` over `n % width` for
 // supporting chip-8's VX/VY wrapping behavior. Binary AND is much faster than modulo
@@ -36,7 +37,7 @@ v: [16]u8 = @splat(0x00),
 /// Program counter, pointing to the next instruction to read.
 pc: u16 = 0x0200,
 
-/// Index register. CHIP-8 only uses 12 bits for addresses
+/// Index register. CHIP-8 only uses 12 bits for addresses.
 ir: u16 = 0x0000,
 
 delay: u8 = 0x00,
@@ -44,8 +45,16 @@ sound: u8 = 0x00,
 
 display_buffer: [WIDTH * HEIGHT]u1 = @splat(0b0),
 
+/// Indicates keys that were held down on the previous machine tick.
+previous_keys: Keys = .empty,
+
+/// Indicates keys that are held down on the current machine tick.
+keys: Keys = .empty,
+
 /// `std.Random` instance for generating random numbers.
 rand: Random,
+
+// =================================================================================================
 
 /// Initialize a `Machine` instance on the stack.
 pub fn init(program: []const u8, prng: *Random.DefaultPrng) Machine {
@@ -61,7 +70,10 @@ pub fn init(program: []const u8, prng: *Random.DefaultPrng) Machine {
 }
 
 /// Fetch/decode/execute next instruction.
-pub fn tick(self: *Machine) void {
+pub fn tick(self: *Machine, keys: Keys) void {
+    self.previous_keys = self.keys;
+    self.keys = keys;
+
     const op: u16 = self.read();
     self.execute(.decode(op));
 }
@@ -141,9 +153,17 @@ pub fn execute(self: *Machine, op: Instruction) void {
         },
 
         // Skip instructions:
-        // TODO: 0xEX9E: Skip next instruction if key in VX is down
-        // TODO: 0xEXA1: Skip next instruction if key in VX is up
-        0xE => {},
+        // 0xEX9E: Skip next instruction if key in VX is down
+        // 0xEXA1: Skip next instruction if key in VX is up
+        0xE => {
+            const vx: u8 = self.v[x];
+            switch (nn) {
+                0x9E => self.pc += @as(u16, @intFromBool(self.keys.isDown(vx))) * 2,
+                0xA1 => self.pc += @as(u16, @intFromBool(!self.keys.isDown(vx))) * 2,
+
+                else => unreachable,
+            }
+        },
 
         // 0x6XNN: Set register VX to NN
         0x6 => self.v[x] = nn,
@@ -259,9 +279,15 @@ pub fn execute(self: *Machine, op: Instruction) void {
                 // 0xFX18: Set the sound timer to the value of VX
                 0x18 => self.sound = vx,
 
-                // TODO: 0xFX0A: Block execution until key is pressed, set VX to key
+                // 0xFX0A: Block execution until a key is released, set VX to that key
                 0x0A => {
-                    self.pc -= 2;
+                    const released: Keys = self.previous_keys.diff(self.keys);
+
+                    if (released.first()) |key| {
+                        self.v[x] = key;
+                    } else {
+                        self.pc -= 2;
+                    }
                 },
 
                 // 0xFX1E: Set I = VX, set VF = 1 on overflow

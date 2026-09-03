@@ -97,10 +97,8 @@ pub const program = [_]u8{
 
     // Load decimal digits into registers after sprite coords
     0xAE, 0xFD, // Set I = 0xEFD
-    0x6D, 0x02, // Set VD = 0x02
-    0xFD, 0x55, // Write V0..V2 to $EFD..$EFF
-    0x6D, 0x05, // Set VD = 0x05
-    0xFD, 0x65, // Load $EFD..$F02 into V0..V5
+    0xF2, 0x55, // Write V0..V2 to $EFD..$EFF
+    0xF5, 0x65, // Load $EFD..$F02 into V0..V5
 
     // Draw sprite for first digit
     0x80, 0x30, // Set V0 = V3

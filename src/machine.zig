@@ -310,14 +310,14 @@ pub fn execute(self: *Machine, op: Instruction) void {
 
                 // 0xFX55: Store registers V0..VX at $I..$I+X
                 0x55 => @memcpy(
-                    self.ram[self.ir .. self.ir + (x & 0x0F) + 1],
-                    self.v[0 .. (x & 0x0F) + 1],
+                    self.ram[self.ir .. self.ir + @as(u5, x) + 1],
+                    self.v[0 .. @as(u5, x) + 1],
                 ),
 
                 // 0xFX65: Load registers V0..VX from $I..$I+X
                 0x65 => @memcpy(
-                    self.v[0 .. (x & 0x0F) + 1],
-                    self.ram[self.ir .. self.ir + (x & 0x0F) + 1],
+                    self.v[0 .. @as(u5, x) + 1],
+                    self.ram[self.ir .. self.ir + @as(u5, x) + 1],
                 ),
 
                 else => unreachable,

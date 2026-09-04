@@ -126,7 +126,7 @@ pub fn iterate(state: *AppState) !AppResult {
     switch (state.machine.sound) {
         0 => {
             // Don't stop beep if 'b' is held
-            if (state.keys.isDownByScancode(.b)) return .run;
+            if (state.keys.hasScancode(.b)) return .run;
 
             try state.beep.stop(0);
         },

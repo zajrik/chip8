@@ -158,8 +158,8 @@ pub fn execute(self: *Machine, op: Instruction) void {
         0xE => {
             const vx: u8 = self.v[x];
             switch (nn) {
-                0x9E => self.pc += @as(u16, @intFromBool(self.keys.isDown(vx))) * 2,
-                0xA1 => self.pc += @as(u16, @intFromBool(!self.keys.isDown(vx))) * 2,
+                0x9E => self.pc += @as(u16, @intFromBool(self.keys.has(vx))) * 2,
+                0xA1 => self.pc += @as(u16, @intFromBool(!self.keys.has(vx))) * 2,
 
                 else => unreachable,
             }

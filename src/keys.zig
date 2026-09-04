@@ -1,4 +1,6 @@
-//! Holds bits representing keys that are currently held down.
+//! A collection indicating keys that are currently held down.
+//!
+//! Represented by a bitfield integer.
 
 const sdl3 = @import("sdl3");
 
@@ -42,30 +44,20 @@ pub fn diff(self: Keys, other: Keys) Keys {
 
 /// Returns the first CHIP-8 key in this `Keys` that is down, or `null` if
 /// no CHIP-8 keys are down.
-///
-/// Keys are checked iteratively in order from `0` to `F`.
 pub fn first(self: Keys) ?u8 {
-    return for (0..16) |i| {
-        const key: u5 = @truncate(i);
-
-        if ((self.value >> key) & 0x01 == 1) {
-            break key;
-        }
-    } else null;
+    return switch (self.value & chip8_keys) {
+        0 => null,
+        else => |it| @ctz(it),
+    };
 }
 
 /// Returns whether the given CHIP-8 `key` (`0` through `F`) is currently held down.
-pub fn isDown(self: Keys, key: u8) bool {
+pub fn has(self: Keys, key: u8) bool {
     return self.value & keyFlag(key) != 0;
 }
 
-/// Returns whether any CHIP-8 key (`0` through `F`) is currently held down.
-pub fn isAnyDown(self: Keys) bool {
-    return self.value & chip8_keys > 0;
-}
-
 /// Returns whether the given `key` is currently held down (by scancode).
-pub fn isDownByScancode(self: Keys, key: Scancode) bool {
+pub fn hasScancode(self: Keys, key: Scancode) bool {
     return self.value & codeFlag(key) != 0;
 }
 

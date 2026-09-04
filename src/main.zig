@@ -1,24 +1,24 @@
 const std = @import("std");
-
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const Dir = std.Io.Dir;
 const Prng = std.Random.DefaultPrng;
-
-const AppState = @import("app_state.zig");
-const Machine = @import("machine.zig");
+const clock = Io.Clock.real;
 
 const sdl3 = @import("sdl3");
-
 const AppResult = sdl3.AppResult;
+const Audio = sdl3.mixer.Audio;
 const Color = sdl3.pixels.Color;
 const Event = sdl3.events.Event;
 const Init = sdl3.Init;
 const InitFlags = sdl3.InitFlags;
+const Mixer = sdl3.mixer.Mixer;
 const Renderer = sdl3.render.Renderer;
+const Track = sdl3.mixer.Track;
 const Window = sdl3.video.Window;
 
-const clock = Io.Clock.real;
+const AppState = @import("app_state.zig");
+const Machine = @import("machine.zig");
 
 comptime {
     _ = sdl3.main_callbacks;
@@ -26,7 +26,7 @@ comptime {
 pub const _start = void;
 pub const WinMainCRTStartup = void;
 
-const flags: InitFlags = .{ .video = true, .events = true };
+const flags: InitFlags = .{ .video = true, .audio = true, .events = true };
 const bg_color: Color = .{ .r = 0, .g = 0, .b = 0 };
 const fg_color: Color = .{ .r = 255, .g = 255, .b = 255 };
 
@@ -39,6 +39,10 @@ pub fn init(sdl_init: Init) !struct { AppState, AppResult } {
     try sdl3.init(flags);
     errdefer sdl3.quit(flags);
 
+    try sdl3.mixer.init();
+    errdefer sdl3.mixer.quit();
+
+    // Initialize display stuff for rendering display buffer
     const window: Window, const renderer: Renderer = try Renderer.initWithWindow(
         "chip-8",
         640,
@@ -51,6 +55,19 @@ pub fn init(sdl_init: Init) !struct { AppState, AppResult } {
 
     try renderer.setLogicalPresentation(64, 32, .letter_box);
 
+    // Set up sound stuff so the sound timer can beep
+    const mixer: Mixer = try .initDevice(.default_playback, null);
+    errdefer mixer.deinit();
+
+    const tone: Audio = try .initSineWaveAudio(mixer, 1400, 1.0, null);
+    errdefer tone.deinit();
+
+    const beep: Track = try .init(mixer);
+    errdefer beep.deinit();
+
+    try beep.setAudio(tone);
+
+    // Read program from disk
     // const program = @import("data/test_program.zig").program;
     const program: []u8 = try readFile(
         sdl_init.arena.allocator(),
@@ -64,6 +81,9 @@ pub fn init(sdl_init: Init) !struct { AppState, AppResult } {
         .{
             .window = window,
             .renderer = renderer,
+            .mixer = mixer,
+            .tone = tone,
+            .beep = beep,
             .machine = .init(program[0..], &prng),
         },
         .run,
@@ -102,6 +122,20 @@ pub fn iterate(state: *AppState) !AppResult {
     }
     try state.renderer.present();
 
+    // Start/stop beep depending on machine sound timer
+    switch (state.machine.sound) {
+        0 => {
+            // Don't stop beep if 'b' is held
+            if (state.keys.isDownByScancode(.b)) return .run;
+
+            try state.beep.stop(0);
+        },
+        else => {
+            if (state.beep.isPlaying()) return .run;
+            try state.beep.play(.{});
+        },
+    }
+
     return .run;
 }
 
@@ -111,7 +145,14 @@ pub fn event(state: *AppState, ev: Event) !AppResult {
         .terminating => .success,
 
         .key_down => |it| {
-            if (it.scancode) |s| state.keys.add(s);
+            if (it.scancode) |s| {
+                state.keys.add(s);
+
+                // Play beep when 'b' is pressed
+                if (s == .b and !state.beep.isPlaying()) {
+                    try state.beep.play(.{});
+                }
+            }
             return .run;
         },
 
@@ -130,8 +171,12 @@ pub fn quit(state: ?*AppState, result: AppResult) void {
     if (state) |it| {
         it.window.deinit();
         it.renderer.deinit();
+        it.beep.deinit();
+        it.tone.deinit();
+        it.mixer.deinit();
     }
 
+    sdl3.mixer.quit();
     sdl3.quit(flags);
     sdl3.shutdown();
 }

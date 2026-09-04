@@ -106,6 +106,8 @@ fn keyIndex(key: Scancode) u5 {
         .c => 0x0B,
         .v => 0x0F,
 
+        .b => 0x10,
+
         inline else => 0x1F,
     };
 }

@@ -118,4 +118,5 @@ pub const program = [_]u8{
     0xD1, 0x25, // Draw X = V1, Y = V2, N = 5
 
     0xF0, 0x0A,
+    0x12, 0x00,
 };

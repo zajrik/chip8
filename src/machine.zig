@@ -149,7 +149,7 @@ pub fn execute(self: *Machine, op: Instruction) void {
                 else => unreachable,
             };
 
-            self.pc += @as(u16, @intFromBool(res)) * 2;
+            self.pc += @as(u16, 2) * @intFromBool(res);
         },
 
         // Skip instructions:
@@ -158,8 +158,8 @@ pub fn execute(self: *Machine, op: Instruction) void {
         0xE => {
             const vx: u8 = self.v[x];
             switch (nn) {
-                0x9E => self.pc += @as(u16, @intFromBool(self.keys.has(vx))) * 2,
-                0xA1 => self.pc += @as(u16, @intFromBool(!self.keys.has(vx))) * 2,
+                0x9E => self.pc += @as(u16, 2) * @intFromBool(self.keys.has(vx)),
+                0xA1 => self.pc += @as(u16, 2) * @intFromBool(!self.keys.has(vx)),
 
                 else => unreachable,
             }
@@ -310,14 +310,14 @@ pub fn execute(self: *Machine, op: Instruction) void {
 
                 // 0xFX55: Store registers V0..VX at $I..$I+X
                 0x55 => @memcpy(
-                    self.ram[self.ir .. self.ir + @as(u5, x) + 1],
-                    self.v[0 .. @as(u5, x) + 1],
+                    self.ram[self.ir .. self.ir + 1 + x],
+                    self.v[0 .. 1 + x],
                 ),
 
                 // 0xFX65: Load registers V0..VX from $I..$I+X
                 0x65 => @memcpy(
-                    self.v[0 .. @as(u5, x) + 1],
-                    self.ram[self.ir .. self.ir + @as(u5, x) + 1],
+                    self.v[0 .. 1 + x],
+                    self.ram[self.ir .. self.ir + 1 + x],
                 ),
 
                 else => unreachable,

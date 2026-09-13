@@ -290,7 +290,7 @@ pub fn execute(self: *Machine, op: Instruction) void {
                     }
                 },
 
-                // 0xFX1E: Set I = VX, set VF = 1 on overflow
+                // 0xFX1E: Set I += VX, set VF = 1 on overflow
                 0x1E => {
                     const i: u16 = self.ir;
                     self.ir = (i + vx) & 0xFFF;

@@ -309,15 +309,15 @@ pub fn execute(self: *Machine, op: Instruction) void {
                 },
 
                 // 0xFX55: Store registers V0..VX at $I..$I+X
-                0x55 => @memcpy(
-                    self.ram[self.ir .. self.ir + 1 + x],
-                    self.v[0 .. 1 + x],
+                0x55 => if (std.math.cast(usize, x)) |it| @memcpy(
+                    self.ram[self.ir..][0 .. 1 + it],
+                    self.v[0 .. 1 + it],
                 ),
 
                 // 0xFX65: Load registers V0..VX from $I..$I+X
-                0x65 => @memcpy(
-                    self.v[0 .. 1 + x],
-                    self.ram[self.ir .. self.ir + 1 + x],
+                0x65 => if (std.math.cast(usize, x)) |it| @memcpy(
+                    self.v[0 .. 1 + it],
+                    self.ram[self.ir..][0 .. 1 + it],
                 ),
 
                 else => unreachable,

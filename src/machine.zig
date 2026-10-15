@@ -64,7 +64,7 @@ pub fn init(program: []const u8, prng: *Random.DefaultPrng) Machine {
     @memcpy(self.ram[0x0050..0x00A0], &font);
 
     // Copy program into memory at the conventional address
-    @memcpy(self.ram[0x0200 .. 0x0200 + program.len], program);
+    @memcpy(self.ram[0x0200..][0..program.len], program);
 
     return self;
 }
@@ -242,7 +242,7 @@ pub fn execute(self: *Machine, op: Instruction) void {
             self.v[0xF] = 0x00;
 
             // Slice sprite bytes from memory
-            const sprite: []u8 = self.ram[self.ir .. self.ir + n];
+            const sprite: []u8 = self.ram[self.ir..][0..n];
 
             // Write sprite bytes to display buffer. For each bit of a row's byte
             // value, toggle the corresponding pixel in the display buffer.
@@ -309,15 +309,15 @@ pub fn execute(self: *Machine, op: Instruction) void {
                 },
 
                 // 0xFX55: Store registers V0..VX at $I..$I+X
-                0x55 => if (std.math.cast(usize, x)) |it| @memcpy(
-                    self.ram[self.ir..][0 .. 1 + it],
-                    self.v[0 .. 1 + it],
+                0x55 => @memcpy(
+                    self.ram[self.ir..][0 .. @as(usize, x) + 1],
+                    self.v[0 .. @as(usize, x) + 1],
                 ),
 
                 // 0xFX65: Load registers V0..VX from $I..$I+X
-                0x65 => if (std.math.cast(usize, x)) |it| @memcpy(
-                    self.v[0 .. 1 + it],
-                    self.ram[self.ir..][0 .. 1 + it],
+                0x65 => @memcpy(
+                    self.v[0 .. @as(usize, x) + 1],
+                    self.ram[self.ir..][0 .. @as(usize, x) + 1],
                 ),
 
                 else => unreachable,

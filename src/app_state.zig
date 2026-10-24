@@ -1,36 +1,32 @@
-const std = @import("std");
-
 const sdl3 = @import("sdl3");
-const Audio = sdl3.mixer.Audio;
 const FramerateCapper = sdl3.extras.FramerateCapper;
-const Mixer = sdl3.mixer.Mixer;
-const Renderer = sdl3.render.Renderer;
-const Scancode = sdl3.Scancode;
-const Track = sdl3.mixer.Track;
-const Window = sdl3.video.Window;
 
+const Display = @import("display.zig");
 const Keys = @import("keys.zig");
 const Machine = @import("machine.zig");
+const Beep = @import("beep.zig");
 
 // =================================================================================================
 
-fps: FramerateCapper(f32) = .{ .mode = .unlimited },
+const AppState: type = @This();
 
-// Display stuff
-window: Window,
-renderer: Renderer,
-
-// Sound stuff
-mixer: Mixer,
-tone: Audio,
-beep: Track,
-
-// Virtual machine instance
+/// Virtual machine instance
 machine: Machine,
 
-// Timer tick tracking
+// Front-end modules
+display: Display,
+beep: Beep,
+
+// Clock speed/tick management
+clock: FramerateCapper(f32) = .{ .mode = .unlimited },
 state_t: f32 = 0.0,
 timer_t: f32 = 0.0,
 
-// Keys currently held down
+/// Keys currently held down
 keys: Keys = .empty,
+
+/// Clean up resources owned by the app state.
+pub fn deinit(self: AppState) void {
+    self.display.deinit();
+    self.beep.deinit();
+}
